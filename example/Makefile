@@ -17,6 +17,8 @@ OBJ_4   := obj/FifoServer.o
 EXE_5   := FifoClient
 OBJ_5   := obj/FifoClient.o
 
+EXE_6   := BiPipeTest
+OBJ_6   := obj/BiPipeTest.o
 
 TARGET  :=   \
   $(EXE_1)   \
@@ -24,6 +26,7 @@ TARGET  :=   \
 	$(EXE_3)   \
 	$(EXE_4)   \
 	$(EXE_5)   \
+	$(EXE_6)   \
 
 
 #The Directories, Source, Includes, Objects, Binary and Resources
@@ -91,6 +94,9 @@ $(EXE_4): $(OBJECTS)
 
 $(EXE_5): $(OBJECTS)
 	$(CC) -o $(TARGETDIR)/$(EXE_5) $(OBJ_5) $(LIB)
+
+$(EXE_6): $(OBJECTS)
+	$(CC) -o $(TARGETDIR)/$(EXE_6) $(OBJ_6) $(LIB)
 
 #####################################################################
 #Compile

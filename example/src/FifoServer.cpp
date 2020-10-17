@@ -1,6 +1,7 @@
 #include <thread>
 #include <deque>
 #include <mutex>
+#include <cstring>
 
 #include <stdio.h> 
 #include <string.h> 
@@ -34,7 +35,7 @@ int main()
 
    // Creating the named file(FIFO) 
    // mkfifo(<pathname>, <permission>) 
-   if ((mkfifo(myFifoServer.c_str(), 0664) == -1 ) && (errno != EEXIST))
+   if ((mkfifo(myFifoServer.c_str(), 0666) == -1 ) && (errno != EEXIST))
    {
       printf ("Unable to create fifo '%s'\n", strerror(errno));
    }
@@ -42,7 +43,7 @@ int main()
 
    // Creating the named file(FIFO) 
    // mkfifo(<pathname>, <permission>) 
-   if ((mkfifo(myFifoClient.c_str(), 0664) == -1 ) && (errno != EEXIST))
+   if ((mkfifo(myFifoClient.c_str(), 0666) == -1 ) && (errno != EEXIST))
    {
       printf ("Unable to create fifo '%s'\n", strerror(errno));
    }
@@ -61,45 +62,48 @@ int main()
       }
    }
 
-   // std::thread SendThread ( SendThread);
-   
-   pktThread.join();
-   printf ("pktThread Joined\n");
-   sendThread.join();
-   printf ("sendThread Joined\n");
-   receiveThread.join();
-   printf ("receive Joined\n");
-
    if (remove (myFifoServer.c_str())  < 0)
    {
       printf ("Unable to remove Server fifo: '%s'\n", strerror(errno));
    }
    if (remove (myFifoClient.c_str())  < 0)
    {
-      printf ("Unable to remove Server fifo: '%s'\n", strerror(errno));
+      printf ("Unable to remove Client fifo: '%s'\n", strerror(errno));
    }
+
+   pktThread.join();
+   sendThread.join();
+   printf("sendThread joined()\n");
+   receiveThread.join();
+   printf("receiveThread joined()\n");
+
    return 0; 
 } 
 
-
+//-----------------------------------------------------------------------------
+// Function: PacketGeneratorThread
+//-----------------------------------------------------------------------------
 void PacketGeneratorThread ( TQueueConcurrent<Message> &mDQ)
 {
    int pktNumber{0};
    printf ("Packet Generator started\n");
    while (!shutdown)
    {
-      char buffer[100];
+      char buffer[Message::MAX_MSG_SIZE];
       sleep(2);
-      sprintf (buffer, "PACKET %d", ++pktNumber);
-      Message msg (sizeof(buffer), buffer);
-      printf ("adding a packet '%s'\n", buffer);
+      std::memset(buffer, 0, sizeof(buffer));
+      sprintf (buffer, "[PACKET %d]", ++pktNumber);
+      Message msg (Message::MAX_MSG_SIZE, buffer);
+      printf ("adding a packet '%s' (%lu bytes)\n", buffer, msg.size());
       mDQ.emplace_back(std::move(msg));
       printf ("Packet Added\n");
    }
    printf ("Packet Generator exit\n");
 }
 
-
+//-----------------------------------------------------------------------------
+// Function: SendThread
+//-----------------------------------------------------------------------------
 void SendThread ( const std::string &fifoName, TQueueConcurrent<Message> &mDQ)
 { 
    printf ("SendThread started\n");   
@@ -109,11 +113,11 @@ void SendThread ( const std::string &fifoName, TQueueConcurrent<Message> &mDQ)
     printf ("Unable to open fifo '%s' Error '%s'\n", fifoName.c_str(), strerror(errno));
     return;
    }
-   
    while (!shutdown)
    {
+      printf ("Server Waiting on MQ\n");
       Message msg = mDQ.pop_front();
-      printf ("Server PUSHING msg into fifo\n");
+      printf ("Server writing to %s (%lu bytes) '%s'\n", fifoName.c_str(), msg.size(), reinterpret_cast<char*>(msg.GetBuffer()));
       int numSent = write (fd, msg.GetBuffer(), msg.size());
       if (numSent < 0)
       {
@@ -128,34 +132,41 @@ void SendThread ( const std::string &fifoName, TQueueConcurrent<Message> &mDQ)
    printf ("SendThread exit\n");   
 }
 
+
+//-----------------------------------------------------------------------------
+// Function: ReceiveThread
+//-----------------------------------------------------------------------------
 void ReceiveThread ( const std::string & fifoName )
 { 
-   char buf[100];
-   printf ("receive thread started\n");     
+   char buf[Message::MAX_MSG_SIZE];
+   printf ("Server receive thread started.  Opening fifo '%s'\n", fifoName.c_str());
+   
    int fd = open(fifoName.c_str(), O_RDONLY); 
    if (fd < 0)
    {
     printf ("Unable to open fifo '%s' Error '%s'\n", fifoName.c_str(), strerror(errno));
     return;
    }
-
-   fd_set rfds;
-   
+   printf ("Server Receive thread fifo opened\n");
    while (!shutdown)
    {
+      fd_set rfds;
       FD_ZERO(&rfds);
-      FD_SET(0, &rfds);
+      FD_SET(fd, &rfds);
       struct timeval tv{.tv_sec=1, .tv_usec=0};
-      int retval = select(1, &rfds, NULL, NULL, &tv);
+      int retval = select(1, &rfds, nullptr, nullptr, &tv);
       if (retval == -1)
       {
          printf ("Select Error '%s'\n", strerror(errno));
       }
       else if (retval > 0)
       {
-         size_t numBytes = read(fd, buf, 80);
+         printf ("FifoServer rxthread calling read\n");
+         size_t numBytes = read(fd, buf, Message::MAX_MSG_SIZE);
+         std::string rxData(buf, numBytes);
+
          printf ("******************************\n");
-         printf ("Received data: %lu bytes '%s'\n",numBytes, buf);
+         printf ("Received data: %lu bytes '%s'\n",rxData.size(), rxData.c_str());
          printf ("******************************\n");
       }
       else

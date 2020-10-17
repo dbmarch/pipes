@@ -7,11 +7,13 @@ constexpr bool TRACE_MSG{ false};
 class Message
 {
    public:
+      static const size_t MAX_MSG_SIZE{200};
+
       Message() {
         printf ("Message()\n");
       };
 
-      Message (size_t len, void* buf)
+      Message (size_t len, const void* buf)
       {
          if (TRACE_MSG) printf ("Message(size_t,void*)\n");
          mLen = len < MAX_MSG_SIZE ? len : MAX_MSG_SIZE;
@@ -44,7 +46,7 @@ class Message
          return std::move(m);
       }
 
-      void Attach( size_t len, void* buf) 
+      void Attach( size_t len, const void* buf) 
       {
          mLen = len < MAX_MSG_SIZE ? len : MAX_MSG_SIZE;
          std::memcpy (mBuf, buf, mLen);
@@ -54,7 +56,6 @@ class Message
       void* GetBuffer(){ return mBuf;}
 
    private:
-      static const size_t MAX_MSG_SIZE{500};
 
       size_t mLen{0};
       uint8_t mBuf[MAX_MSG_SIZE];

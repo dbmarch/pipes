@@ -19,6 +19,9 @@ static void ReceiveThread ( const std::string &fifoName, TQueueConcurrent<Messag
 
 bool shutdown {false};
 
+//-----------------------------------------------------------------------------
+// Function: main
+//-----------------------------------------------------------------------------
 int main() 
 { 
    std::mutex mMutex ;
@@ -32,7 +35,7 @@ int main()
 
    // Creating the named file(FIFO) 
    // mkfifo(<pathname>, <permission>) 
-   if ((mkfifo(myFifoServer.c_str(), 0664) == -1 ) && (errno != EEXIST))
+   if ((mkfifo(myFifoServer.c_str(), 0666) == -1 ) && (errno != EEXIST))
    {
       printf ("Unable to create fifo '%s'\n", strerror(errno));
    }
@@ -40,7 +43,7 @@ int main()
 
    // Creating the named file(FIFO) 
    // mkfifo(<pathname>, <permission>) 
-   if ((mkfifo(myFifoClient.c_str(), 0664) == -1 ) && (errno != EEXIST))
+   if ((mkfifo(myFifoClient.c_str(), 0666) == -1 ) && (errno != EEXIST))
    {
       printf ("Unable to create fifo '%s'\n", strerror(errno));
    }
@@ -59,12 +62,6 @@ int main()
       }
    }
 
-   // std::thread SendThread ( SendThread);
-   
-   sendThread.join();
-   printf ("sendThread Joined\n");
-   receiveThread.join();
-   printf ("receive Joined\n");
 
    if (remove (myFifoServer.c_str())  < 0)
    {
@@ -72,12 +69,20 @@ int main()
    }
    if (remove (myFifoClient.c_str())  < 0)
    {
-      printf ("Unable to remove Server fifo: '%s'\n", strerror(errno));
+      printf ("Unable to remove Client fifo: '%s'\n", strerror(errno));
    }
+
+   sendThread.join();
+   printf ("sendThread joined()\n");
+   receiveThread.join();
+   printf ("receiveThread joined()\n");
 
    return 0; 
 } 
 
+//-----------------------------------------------------------------------------
+// Function: SendThread
+//-----------------------------------------------------------------------------
 void SendThread ( const std::string &fifoName, TQueueConcurrent<Message> &mDQ)
 { 
    printf ("SendThread started\n");   
@@ -90,6 +95,7 @@ void SendThread ( const std::string &fifoName, TQueueConcurrent<Message> &mDQ)
    
    while (!shutdown)
    {
+      printf ("Client Waiting on MQ\n");
       Message msg = mDQ.pop_front();
       printf ("Client sending message back to server!\n");
       int numSent = write (fd, msg.GetBuffer(), msg.size());
@@ -107,10 +113,14 @@ void SendThread ( const std::string &fifoName, TQueueConcurrent<Message> &mDQ)
    printf ("SendThread exit\n");   
 }
 
+
+//-----------------------------------------------------------------------------
+// Function: ReceiveThread
+//-----------------------------------------------------------------------------
 void ReceiveThread ( const std::string & fifoName, TQueueConcurrent<Message> &mDQ )
 { 
-   char buf[100];
-   printf ("receive thread started\n");     
+   char buf[Message::MAX_MSG_SIZE];
+   printf ("Client Receive thread started.  Opening fifo '%s'\n", fifoName.c_str());
    int fd = open(fifoName.c_str(), O_RDONLY); 
    if (fd < 0)
    {
@@ -118,22 +128,25 @@ void ReceiveThread ( const std::string & fifoName, TQueueConcurrent<Message> &mD
     return;
    }
 
-   fd_set rfds;
-   
+   printf ("Client receive thread fifo opened\n");
+    
    while (!shutdown)
    {
+      fd_set rfds;
       FD_ZERO(&rfds);
-      FD_SET(0, &rfds);
+      FD_SET(fd, &rfds);
       struct timeval tv{.tv_sec=1, .tv_usec=0};
-      int retval = select(1, &rfds, NULL, NULL, &tv);
+      int retval = select(1, &rfds, nullptr, nullptr, &tv);
       if (retval == -1)
       {
          printf ("Select Error '%s'\n", strerror(errno));
       }
       else if (retval > 0)
       {
-         size_t numBytes = read(fd, buf, 80);
-         printf ("Received data: %lu bytes '%s'\n",numBytes, buf);
+         printf ("Client - RxFifo has data.  Calling read\n");
+         size_t numBytes = read(fd, buf, Message::MAX_MSG_SIZE);
+         std::string rxData(buf, numBytes);
+         printf ("Received data: %lu bytes '%s'\n",rxData.size(),rxData.c_str());
          Message msg(numBytes, buf);
          mDQ.emplace_back(std::move(msg));
       }
