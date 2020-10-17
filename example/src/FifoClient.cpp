@@ -19,6 +19,8 @@ static void ReceiveThread ( const std::string &fifoName, TQueueConcurrent<Messag
 
 bool shutdown {false};
 
+constexpr bool TRACE{false};
+
 //-----------------------------------------------------------------------------
 // Function: main
 //-----------------------------------------------------------------------------
@@ -35,6 +37,7 @@ int main()
 
    // Creating the named file(FIFO) 
    // mkfifo(<pathname>, <permission>) 
+   // RD/WR for OWNER, RD/WR for GROUP and RD/WR for Others.
    if ((mkfifo(myFifoServer.c_str(), 0666) == -1 ) && (errno != EEXIST))
    {
       printf ("Unable to create fifo '%s'\n", strerror(errno));
@@ -59,6 +62,8 @@ int main()
       {
          printf ("Shutdown\n");
          shutdown = true;
+         Message msg (4, "BYE");
+         mDQ.emplace_back(std::move(msg));
       }
    }
 
@@ -85,7 +90,7 @@ int main()
 //-----------------------------------------------------------------------------
 void SendThread ( const std::string &fifoName, TQueueConcurrent<Message> &mDQ)
 { 
-   printf ("SendThread started\n");   
+   printf ("SendThread started: opening '%s' for writing\n", fifoName.c_str());   
    int fd = open(fifoName.c_str(), O_WRONLY); 
    if (fd < 0)
    {
@@ -95,9 +100,9 @@ void SendThread ( const std::string &fifoName, TQueueConcurrent<Message> &mDQ)
    
    while (!shutdown)
    {
-      printf ("Client Waiting on MQ\n");
-      Message msg = mDQ.pop_front();
-      printf ("Client sending message back to server!\n");
+      if (TRACE) printf ("Client Waiting on MQ\n");
+      Message msg {mDQ.pop_front()};
+      if (TRACE) printf ("Client sending message back to server!\n");
       int numSent = write (fd, msg.GetBuffer(), msg.size());
       if (numSent < 0)
       {
@@ -105,8 +110,7 @@ void SendThread ( const std::string &fifoName, TQueueConcurrent<Message> &mDQ)
       }
       else
       {
-         printf ("%d bytes pushed into fifo\n", numSent);
-         
+         if (TRACE) printf ("%d bytes pushed into fifo\n", numSent);
       }
    }
    close(fd);
@@ -121,14 +125,14 @@ void ReceiveThread ( const std::string & fifoName, TQueueConcurrent<Message> &mD
 { 
    char buf[Message::MAX_MSG_SIZE];
    printf ("Client Receive thread started.  Opening fifo '%s'\n", fifoName.c_str());
-   int fd = open(fifoName.c_str(), O_RDONLY); 
+   int fd = open(fifoName.c_str(), O_RDWR); 
    if (fd < 0)
    {
     printf ("Unable to open fifo '%s' Error '%s'\n", fifoName.c_str(), strerror(errno));
     return;
    }
 
-   printf ("Client receive thread fifo opened\n");
+   if (TRACE) printf ("Client receive thread fifo opened\n");
     
    while (!shutdown)
    {
@@ -136,14 +140,14 @@ void ReceiveThread ( const std::string & fifoName, TQueueConcurrent<Message> &mD
       FD_ZERO(&rfds);
       FD_SET(fd, &rfds);
       struct timeval tv{.tv_sec=1, .tv_usec=0};
-      int retval = select(1, &rfds, nullptr, nullptr, &tv);
+      int retval = select(fd+1, &rfds, nullptr, nullptr, &tv);
       if (retval == -1)
       {
          printf ("Select Error '%s'\n", strerror(errno));
       }
       else if (retval > 0)
       {
-         printf ("Client - RxFifo has data.  Calling read\n");
+         if (TRACE) printf ("Client - RxFifo '%s'has data.  Calling read\n", fifoName.c_str());
          size_t numBytes = read(fd, buf, Message::MAX_MSG_SIZE);
          std::string rxData(buf, numBytes);
          printf ("Received data: %lu bytes '%s'\n",rxData.size(),rxData.c_str());
@@ -152,7 +156,7 @@ void ReceiveThread ( const std::string & fifoName, TQueueConcurrent<Message> &mD
       }
       else
       {
-         printf ("receive thread polling\n");
+         if (TRACE) printf ("receive thread polling\n");
       }
    }
    close(fd);

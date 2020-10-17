@@ -19,7 +19,10 @@ static void SendThread (const std::string &fifoName, TQueueConcurrent<Message> &
 static void ReceiveThread ( const std::string &fifoName );
 static void PacketGeneratorThread ( TQueueConcurrent<Message> &mDQ);
 
+constexpr bool TRACE{false};
+
 bool shutdown {false};
+
 
 int main() 
 { 
@@ -91,12 +94,11 @@ void PacketGeneratorThread ( TQueueConcurrent<Message> &mDQ)
    {
       char buffer[Message::MAX_MSG_SIZE];
       sleep(2);
-      std::memset(buffer, 0, sizeof(buffer));
       sprintf (buffer, "[PACKET %d]", ++pktNumber);
-      Message msg (Message::MAX_MSG_SIZE, buffer);
-      printf ("adding a packet '%s' (%lu bytes)\n", buffer, msg.size());
+      Message msg (strlen (buffer), buffer);
+      printf ("Generating a '%s' (%lu bytes)\n", buffer, msg.size());
       mDQ.emplace_back(std::move(msg));
-      printf ("Packet Added\n");
+      if (TRACE) printf ("Packet Added\n");
    }
    printf ("Packet Generator exit\n");
 }
@@ -115,9 +117,9 @@ void SendThread ( const std::string &fifoName, TQueueConcurrent<Message> &mDQ)
    }
    while (!shutdown)
    {
-      printf ("Server Waiting on MQ\n");
+      if (TRACE) printf ("Server Waiting on MQ\n");
       Message msg = mDQ.pop_front();
-      printf ("Server writing to %s (%lu bytes) '%s'\n", fifoName.c_str(), msg.size(), reinterpret_cast<char*>(msg.GetBuffer()));
+      if (TRACE) printf ("Server writing to %s (%lu bytes) '%s'\n", fifoName.c_str(), msg.size(), reinterpret_cast<char*>(msg.GetBuffer()));
       int numSent = write (fd, msg.GetBuffer(), msg.size());
       if (numSent < 0)
       {
@@ -125,7 +127,7 @@ void SendThread ( const std::string &fifoName, TQueueConcurrent<Message> &mDQ)
       }
       else
       {
-         printf ("%d bytes pushed into fifo\n", numSent);
+         if (TRACE) printf ("%d bytes pushed into fifo\n", numSent);
       }
    }
    close(fd);
@@ -141,7 +143,7 @@ void ReceiveThread ( const std::string & fifoName )
    char buf[Message::MAX_MSG_SIZE];
    printf ("Server receive thread started.  Opening fifo '%s'\n", fifoName.c_str());
    
-   int fd = open(fifoName.c_str(), O_RDONLY); 
+   int fd = open(fifoName.c_str(), O_RDWR); 
    if (fd < 0)
    {
     printf ("Unable to open fifo '%s' Error '%s'\n", fifoName.c_str(), strerror(errno));
@@ -154,24 +156,21 @@ void ReceiveThread ( const std::string & fifoName )
       FD_ZERO(&rfds);
       FD_SET(fd, &rfds);
       struct timeval tv{.tv_sec=1, .tv_usec=0};
-      int retval = select(1, &rfds, nullptr, nullptr, &tv);
+      int retval = select(fd+1, &rfds, nullptr, nullptr, &tv);
       if (retval == -1)
       {
          printf ("Select Error '%s'\n", strerror(errno));
       }
       else if (retval > 0)
       {
-         printf ("FifoServer rxthread calling read\n");
+         if (TRACE) printf ("FifoServer rxthread calling read\n");
          size_t numBytes = read(fd, buf, Message::MAX_MSG_SIZE);
          std::string rxData(buf, numBytes);
-
-         printf ("******************************\n");
-         printf ("Received data: %lu bytes '%s'\n",rxData.size(), rxData.c_str());
-         printf ("******************************\n");
+         printf ("===> Received data: %lu bytes '%s'\n",rxData.size(), rxData.c_str());
       }
       else
       {
-         printf ("receive thread polling\n");
+         if (TRACE) printf ("receive thread polling\n");
       }
    }
    close(fd);
