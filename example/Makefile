@@ -20,6 +20,13 @@ OBJ_5   := obj/FifoClient.o
 EXE_6   := BiPipeTest
 OBJ_6   := obj/BiPipeTest.o
 
+EXE_7   := SockServer
+OBJ_7   := obj/SockServer.o
+
+EXE_8   := SockClient
+OBJ_8   := obj/SockClient.o
+
+
 TARGET  :=   \
   $(EXE_1)   \
 	$(EXE_2)   \
@@ -27,6 +34,8 @@ TARGET  :=   \
 	$(EXE_4)   \
 	$(EXE_5)   \
 	$(EXE_6)   \
+	$(EXE_7)   \
+	$(EXE_8)
 
 
 #The Directories, Source, Includes, Objects, Binary and Resources
@@ -97,6 +106,12 @@ $(EXE_5): $(OBJECTS)
 
 $(EXE_6): $(OBJECTS)
 	$(CC) -o $(TARGETDIR)/$(EXE_6) $(OBJ_6) $(LIB)
+
+$(EXE_7): $(OBJECTS)
+	$(CC) -o $(TARGETDIR)/$(EXE_7) $(OBJ_7) $(LIB)
+
+$(EXE_8): $(OBJECTS)
+	$(CC) -o $(TARGETDIR)/$(EXE_8) $(OBJ_8) $(LIB)
 
 #####################################################################
 #Compile
